@@ -18,3 +18,4 @@ env/
 # OS files
 .DS_Store
 Thumbs.db
+__pycache__/checkinbot.cpython-314.pyc
