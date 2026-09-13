@@ -1,0 +1,32 @@
+name: Scheduled Check-In Bot
+
+on:
+  schedule:
+    # Runs every 30 minutes, all day, every day (UTC).
+    # We don't know the instructor's exact check-in window yet, and GitHub's
+    # cron scheduler can run late under load, so frequent runs give us margin
+    # to catch a window even if one run is delayed or misses it.
+    - cron: "0,30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    env:
+      PRACTICE_API_TOKEN: ${{ secrets.PRACTICE_API_TOKEN }}
+      PRACTICE_API_URL: ${{ secrets.PRACTICE_API_URL }}
+      INSTRUCTOR_ID: ${{ vars.INSTRUCTOR_ID }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run checkinbot.py
+        run: python checkinbot.py
