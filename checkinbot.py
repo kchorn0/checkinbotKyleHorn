@@ -2,6 +2,7 @@
 # Kyle Horn
 # Scheduled Check-In Bot
 
+import json
 import os
 import requests
 
@@ -15,9 +16,10 @@ INSTRUCTOR_ID = os.environ.get("INSTRUCTOR_ID")
 # How many posts to request per page (the API allows up to 100)
 PAGE_SIZE = 100
 
-# Where downloaded attachments get saved
+# Where downloaded attachments and the collected.json summary get saved
 ARTIFACT_DIR = "artifact"
 FILES_DIR = os.path.join(ARTIFACT_DIR, "files")
+COLLECTED_JSON_PATH = os.path.join(ARTIFACT_DIR, "collected.json")
 
 
 # Creates a class that will contain all API methods
@@ -118,13 +120,20 @@ def download_all_attachments(client, posts):
             # share the same filename never overwrite each other
             safe_name = f"{post['id']}_{attachment['id']}_{filename}"
             destination_path = os.path.join(FILES_DIR, safe_name)
+            # Path relative to the artifact/ folder, so collected.json stays portable
+            relative_path = os.path.join("files", safe_name)
 
             try:
                 client.download_attachment(attachment["download_url"], destination_path)
+                # Record where this attachment landed so collected.json can point to it
+                attachment["local_path"] = relative_path
+                attachment["downloaded"] = True
                 success_count += 1
             except (requests.RequestException, OSError) as e:
                 # Record the failure instead of letting the whole program crash,
                 # and instead of silently pretending everything worked
+                attachment["local_path"] = None
+                attachment["downloaded"] = False
                 failures.append({
                     "post_id": post["id"],
                     "attachment_id": attachment.get("id"),
@@ -133,6 +142,21 @@ def download_all_attachments(client, posts):
                 })
 
     return success_count, failures
+
+
+def save_collected_json(posts, instructor_id):
+    """Writes the full instructor-post collection to artifact/collected.json."""
+    os.makedirs(ARTIFACT_DIR, exist_ok=True)
+
+    data = {
+        "instructor_id": instructor_id,
+        "post_count": len(posts),
+        "posts": posts,
+    }
+
+    with open(COLLECTED_JSON_PATH, "w", encoding="utf-8") as f:
+        # indent=2 keeps it human-readable; ensure_ascii=False keeps text as-typed
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 # Checks if this file is being run directly instead of being imported
@@ -167,3 +191,7 @@ if __name__ == "__main__":
         for failure in failures:
             print(f"  - post {failure['post_id']}, attachment {failure['attachment_id']} "
                   f"({failure['filename']}): {failure['error']}")
+
+    # Task 1: save the full collection (now including attachment local paths) to collected.json
+    save_collected_json(instructor_posts, INSTRUCTOR_ID)
+    print(f"Saved collection to {COLLECTED_JSON_PATH}")
