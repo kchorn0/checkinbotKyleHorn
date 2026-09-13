@@ -178,6 +178,11 @@ def reply_to_checkins(client, checkin_posts, my_user_id):
     return results
 
 
+def sanitize_filename(filename):
+    """Strips any directory parts so a malicious filename can't write outside artifact/files/."""
+    return os.path.basename(filename.replace("\\", "/"))
+
+
 def download_all_attachments(client, posts):
     """Downloads every attachment for every post. Returns (success_count, failures)."""
     # Make sure the destination folder exists before we try to save anything into it
@@ -189,10 +194,12 @@ def download_all_attachments(client, posts):
     for post in posts:
         for attachment in post.get("attachments", []):
             filename = attachment.get("filename", f"attachment_{attachment.get('id')}")
+            # Strip any directory parts before the filename ever touches a file path
+            clean_filename = sanitize_filename(filename)
 
             # Prefix with post id + attachment id so two attachments that happen to
             # share the same filename never overwrite each other
-            safe_name = f"{post['id']}_{attachment['id']}_{filename}"
+            safe_name = f"{post['id']}_{attachment['id']}_{clean_filename}"
             destination_path = os.path.join(FILES_DIR, safe_name)
             # Path relative to the artifact/ folder, so collected.json stays portable
             relative_path = os.path.join("files", safe_name)
