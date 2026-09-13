@@ -15,6 +15,10 @@ INSTRUCTOR_ID = os.environ.get("INSTRUCTOR_ID")
 # How many posts to request per page (the API allows up to 100)
 PAGE_SIZE = 100
 
+# Where downloaded attachments get saved
+ARTIFACT_DIR = "artifact"
+FILES_DIR = os.path.join(ARTIFACT_DIR, "files")
+
 
 # Creates a class that will contain all API methods
 class PracticeHubClient:
@@ -64,6 +68,21 @@ class PracticeHubClient:
 
         return all_posts
 
+    def download_attachment(self, download_url, destination_path):
+        """Downloads one attachment's file bytes and saves them to destination_path."""
+        # The API may return a full URL or just a path - handle both
+        if download_url.startswith("http"):
+            url = download_url
+        else:
+            url = f"{self.base}{download_url}"
+
+        resp = requests.get(url, headers=self.headers, stream=True)
+        resp.raise_for_status()
+
+        with open(destination_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                f.write(chunk)
+
 
 def collect_instructor_posts(client, instructor_id):
     """Builds a clean list of dictionaries with everything Task 1 needs to save."""
@@ -81,6 +100,39 @@ def collect_instructor_posts(client, instructor_id):
             "attachments": post.get("attachments", []),
         })
     return collected
+
+
+def download_all_attachments(client, posts):
+    """Downloads every attachment for every post. Returns (success_count, failures)."""
+    # Make sure the destination folder exists before we try to save anything into it
+    os.makedirs(FILES_DIR, exist_ok=True)
+
+    success_count = 0
+    failures = []
+
+    for post in posts:
+        for attachment in post.get("attachments", []):
+            filename = attachment.get("filename", f"attachment_{attachment.get('id')}")
+
+            # Prefix with post id + attachment id so two attachments that happen to
+            # share the same filename never overwrite each other
+            safe_name = f"{post['id']}_{attachment['id']}_{filename}"
+            destination_path = os.path.join(FILES_DIR, safe_name)
+
+            try:
+                client.download_attachment(attachment["download_url"], destination_path)
+                success_count += 1
+            except (requests.RequestException, OSError) as e:
+                # Record the failure instead of letting the whole program crash,
+                # and instead of silently pretending everything worked
+                failures.append({
+                    "post_id": post["id"],
+                    "attachment_id": attachment.get("id"),
+                    "filename": filename,
+                    "error": str(e),
+                })
+
+    return success_count, failures
 
 
 # Checks if this file is being run directly instead of being imported
@@ -105,3 +157,13 @@ if __name__ == "__main__":
     # Task 1: collect every post written by the instructor
     instructor_posts = collect_instructor_posts(client, INSTRUCTOR_ID)
     print(f"Collected {len(instructor_posts)} posts by instructor id {INSTRUCTOR_ID}")
+
+    # Task 1: download every attachment from those posts
+    success_count, failures = download_all_attachments(client, instructor_posts)
+    print(f"Downloaded {success_count} attachment(s) to {FILES_DIR}/")
+
+    if failures:
+        print(f"WARNING: {len(failures)} attachment(s) failed to download:")
+        for failure in failures:
+            print(f"  - post {failure['post_id']}, attachment {failure['attachment_id']} "
+                  f"({failure['filename']}): {failure['error']}")
