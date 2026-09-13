@@ -158,22 +158,27 @@ def reply_to_checkins(client, checkin_posts, my_user_id):
     results = []
 
     for post in checkin_posts:
-        # Step 8's duplicate check: never post a second reply to the same check-in
-        if has_already_replied(client, post["id"], my_user_id):
-            results.append({"post_id": post["id"], "title": post["title"], "outcome": "skipped_duplicate"})
-            continue
+        try:
+            # Step 8's duplicate check: never post a second reply to the same check-in
+            if has_already_replied(client, post["id"], my_user_id):
+                results.append({"post_id": post["id"], "title": post["title"], "outcome": "skipped_duplicate"})
+                continue
 
-        reply_body = f'Checking in for "{post["title"]}"'
-        # We attempt exactly once - a 423 means the window is closed for this run,
-        # and the next scheduled run (not a retry loop here) is what tries again
-        outcome, detail = client.post_comment(post["id"], reply_body)
+            reply_body = f'Checking in for "{post["title"]}"'
+            # We attempt exactly once - a 423 means the window is closed for this run,
+            # and the next scheduled run (not a retry loop here) is what tries again
+            outcome, detail = client.post_comment(post["id"], reply_body)
 
-        if outcome == "ok":
-            results.append({"post_id": post["id"], "title": post["title"], "outcome": "replied"})
-        elif outcome == "closed":
-            results.append({"post_id": post["id"], "title": post["title"], "outcome": "window_closed"})
-        else:
-            results.append({"post_id": post["id"], "title": post["title"], "outcome": "error", "detail": detail})
+            if outcome == "ok":
+                results.append({"post_id": post["id"], "title": post["title"], "outcome": "replied"})
+            elif outcome == "closed":
+                results.append({"post_id": post["id"], "title": post["title"], "outcome": "window_closed"})
+            else:
+                results.append({"post_id": post["id"], "title": post["title"], "outcome": "error", "detail": detail})
+        except requests.RequestException as e:
+            # A network problem on THIS post (timeout, connection drop, etc.) must not
+            # stop the loop - other check-ins may still be inside their reply window
+            results.append({"post_id": post["id"], "title": post["title"], "outcome": "error", "detail": str(e)})
 
     return results
 
@@ -259,33 +264,30 @@ if __name__ == "__main__":
     else:
         raise SystemExit(f"Connection/authentication failed (status code {result})")
 
-    # Task 1: collect every post written by the instructor
-    instructor_posts = collect_instructor_posts(client, INSTRUCTOR_ID)
+    # Fetch the instructor's posts once - both Task 1 and Task 2 need this list.
+    # If this fails there is nothing else we can do this run, so we exit cleanly
+    # with a message instead of letting a raw traceback come out of pagination.
+    try:
+        instructor_posts = collect_instructor_posts(client, INSTRUCTOR_ID)
+    except requests.RequestException as e:
+        raise SystemExit(f"Failed to fetch instructor posts: {e}")
     print(f"Collected {len(instructor_posts)} posts by instructor id {INSTRUCTOR_ID}")
 
-    # Task 1: download every attachment from those posts
-    success_count, failures = download_all_attachments(client, instructor_posts)
-    print(f"Downloaded {success_count} attachment(s) to {FILES_DIR}/")
-
-    if failures:
-        print(f"WARNING: {len(failures)} attachment(s) failed to download:")
-        for failure in failures:
-            print(f"  - post {failure['post_id']}, attachment {failure['attachment_id']} "
-                  f"({failure['filename']}): {failure['error']}")
-
-    # Task 1: save the full collection (now including attachment local paths) to collected.json
-    save_collected_json(instructor_posts, INSTRUCTOR_ID)
-    print(f"Saved collection to {COLLECTED_JSON_PATH}")
-
-    # Task 2 (detection only for now): find instructor posts that are check-ins
+    # Task 2 runs FIRST and is wrapped on its own: replies are time-sensitive
+    # (the 423 window), while downloading/saving below is not. This way a slow
+    # or failing download can never cost us a reply we could have gotten in.
     checkin_posts = filter_checkin_posts(instructor_posts)
     print(f"Found {len(checkin_posts)} check-in post(s):")
     for post in checkin_posts:
         print(f"  - post {post['id']}: \"{post['title']}\"")
 
-    # Task 2: reply to each open check-in (skipping ones we already replied to)
     my_user_id = result.get("id")
-    reply_results = reply_to_checkins(client, checkin_posts, my_user_id)
+    try:
+        reply_results = reply_to_checkins(client, checkin_posts, my_user_id)
+    except requests.RequestException as e:
+        print(f"ERROR: could not process check-in replies this run: {e}")
+        reply_results = []
+
     for r in reply_results:
         if r["outcome"] == "replied":
             print(f"  - post {r['post_id']} (\"{r['title']}\"): replied")
@@ -295,3 +297,21 @@ if __name__ == "__main__":
             print(f"  - post {r['post_id']} (\"{r['title']}\"): reply window closed (423), skipped")
         else:
             print(f"  - post {r['post_id']} (\"{r['title']}\"): ERROR - {r['detail']}")
+
+    # Task 1: download every attachment and save collected.json.
+    # Not time-sensitive, so it runs after replies and is isolated in its own
+    # try/except - a problem here should never look like Task 2 failed.
+    try:
+        success_count, failures = download_all_attachments(client, instructor_posts)
+        print(f"Downloaded {success_count} attachment(s) to {FILES_DIR}/")
+
+        if failures:
+            print(f"WARNING: {len(failures)} attachment(s) failed to download:")
+            for failure in failures:
+                print(f"  - post {failure['post_id']}, attachment {failure['attachment_id']} "
+                      f"({failure['filename']}): {failure['error']}")
+
+        save_collected_json(instructor_posts, INSTRUCTOR_ID)
+        print(f"Saved collection to {COLLECTED_JSON_PATH}")
+    except (requests.RequestException, OSError) as e:
+        print(f"ERROR: could not finish collecting attachments/JSON this run: {e}")

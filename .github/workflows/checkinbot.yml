@@ -9,6 +9,16 @@ on:
     - cron: "0,30 * * * *"
   workflow_dispatch:
 
+# Prevents two runs from ever executing at the same time (e.g. a slow run still
+# going when the next scheduled trigger fires). Without this, overlapping runs
+# could race on the final git push, or both post a reply before either one
+# sees the other's comment. cancel-in-progress is false so a run already
+# talking to the API is allowed to finish instead of being cut off mid-reply -
+# the next run just waits its turn.
+concurrency:
+  group: checkinbot
+  cancel-in-progress: false
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
