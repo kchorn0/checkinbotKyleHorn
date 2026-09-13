@@ -76,6 +76,28 @@ class PracticeHubClient:
         resp.raise_for_status()
         return resp.json()
 
+    def post_comment(self, post_id, body):
+        """Posts a comment/reply on a post.
+
+        Returns one of:
+          ("ok", comment_json)   - the reply was accepted
+          ("closed", None)       - the server returned 423: the check-in window is closed
+          ("error", detail)      - any other failure
+        """
+        resp = requests.post(
+            f"{self.base}/api/v1/posts/{post_id}/comments",
+            headers=self.headers,
+            json={"body": body},
+        )
+
+        if resp.status_code == 423:
+            return "closed", None
+
+        if not resp.ok:
+            return "error", f"HTTP {resp.status_code}: {resp.text}"
+
+        return "ok", resp.json()
+
     def download_attachment(self, download_url, destination_path):
         """Downloads one attachment's file bytes and saves them to destination_path."""
         # The API may return a full URL or just a path - handle both
@@ -129,6 +151,31 @@ def has_already_replied(client, post_id, my_user_id):
     """Checks whether my_user_id already left a comment on this post."""
     comments = client.list_comments(post_id)
     return any(comment["author_id"] == my_user_id for comment in comments)
+
+
+def reply_to_checkins(client, checkin_posts, my_user_id):
+    """Replies to each open check-in exactly once. Returns a list of result dicts."""
+    results = []
+
+    for post in checkin_posts:
+        # Step 8's duplicate check: never post a second reply to the same check-in
+        if has_already_replied(client, post["id"], my_user_id):
+            results.append({"post_id": post["id"], "title": post["title"], "outcome": "skipped_duplicate"})
+            continue
+
+        reply_body = f'Checking in for "{post["title"]}"'
+        # We attempt exactly once - a 423 means the window is closed for this run,
+        # and the next scheduled run (not a retry loop here) is what tries again
+        outcome, detail = client.post_comment(post["id"], reply_body)
+
+        if outcome == "ok":
+            results.append({"post_id": post["id"], "title": post["title"], "outcome": "replied"})
+        elif outcome == "closed":
+            results.append({"post_id": post["id"], "title": post["title"], "outcome": "window_closed"})
+        else:
+            results.append({"post_id": post["id"], "title": post["title"], "outcome": "error", "detail": detail})
+
+    return results
 
 
 def download_all_attachments(client, posts):
@@ -229,9 +276,15 @@ if __name__ == "__main__":
     for post in checkin_posts:
         print(f"  - post {post['id']}: \"{post['title']}\"")
 
-    # Task 2 (duplicate check only for now - no reply is posted yet)
+    # Task 2: reply to each open check-in (skipping ones we already replied to)
     my_user_id = result.get("id")
-    for post in checkin_posts:
-        already_replied = has_already_replied(client, post["id"], my_user_id)
-        status = "already replied - would skip" if already_replied else "no reply yet - would post"
-        print(f"  - post {post['id']}: {status}")
+    reply_results = reply_to_checkins(client, checkin_posts, my_user_id)
+    for r in reply_results:
+        if r["outcome"] == "replied":
+            print(f"  - post {r['post_id']} (\"{r['title']}\"): replied")
+        elif r["outcome"] == "skipped_duplicate":
+            print(f"  - post {r['post_id']} (\"{r['title']}\"): already replied, skipped")
+        elif r["outcome"] == "window_closed":
+            print(f"  - post {r['post_id']} (\"{r['title']}\"): reply window closed (423), skipped")
+        else:
+            print(f"  - post {r['post_id']} (\"{r['title']}\"): ERROR - {r['detail']}")
