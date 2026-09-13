@@ -70,6 +70,12 @@ class PracticeHubClient:
 
         return all_posts
 
+    def list_comments(self, post_id):
+        """Gets every comment on a post (the API returns them all in one response)."""
+        resp = requests.get(f"{self.base}/api/v1/posts/{post_id}/comments", headers=self.headers)
+        resp.raise_for_status()
+        return resp.json()
+
     def download_attachment(self, download_url, destination_path):
         """Downloads one attachment's file bytes and saves them to destination_path."""
         # The API may return a full URL or just a path - handle both
@@ -117,6 +123,12 @@ def filter_checkin_posts(posts):
     student's post - only the title text decides which of THOSE are check-ins.
     """
     return [post for post in posts if is_checkin(post)]
+
+
+def has_already_replied(client, post_id, my_user_id):
+    """Checks whether my_user_id already left a comment on this post."""
+    comments = client.list_comments(post_id)
+    return any(comment["author_id"] == my_user_id for comment in comments)
 
 
 def download_all_attachments(client, posts):
@@ -216,3 +228,10 @@ if __name__ == "__main__":
     print(f"Found {len(checkin_posts)} check-in post(s):")
     for post in checkin_posts:
         print(f"  - post {post['id']}: \"{post['title']}\"")
+
+    # Task 2 (duplicate check only for now - no reply is posted yet)
+    my_user_id = result.get("id")
+    for post in checkin_posts:
+        already_replied = has_already_replied(client, post["id"], my_user_id)
+        status = "already replied - would skip" if already_replied else "no reply yet - would post"
+        print(f"  - post {post['id']}: {status}")
