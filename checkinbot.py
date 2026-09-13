@@ -104,6 +104,21 @@ def collect_instructor_posts(client, instructor_id):
     return collected
 
 
+def is_checkin(post):
+    """A post counts as a check-in if 'check-in' appears anywhere in its title."""
+    return "check-in" in post["title"].lower()
+
+
+def filter_checkin_posts(posts):
+    """Returns only the instructor posts that are check-ins.
+
+    This only ever looks at the instructor posts we already collected
+    (see collect_instructor_posts), so it can never match another
+    student's post - only the title text decides which of THOSE are check-ins.
+    """
+    return [post for post in posts if is_checkin(post)]
+
+
 def download_all_attachments(client, posts):
     """Downloads every attachment for every post. Returns (success_count, failures)."""
     # Make sure the destination folder exists before we try to save anything into it
@@ -195,3 +210,9 @@ if __name__ == "__main__":
     # Task 1: save the full collection (now including attachment local paths) to collected.json
     save_collected_json(instructor_posts, INSTRUCTOR_ID)
     print(f"Saved collection to {COLLECTED_JSON_PATH}")
+
+    # Task 2 (detection only for now): find instructor posts that are check-ins
+    checkin_posts = filter_checkin_posts(instructor_posts)
+    print(f"Found {len(checkin_posts)} check-in post(s):")
+    for post in checkin_posts:
+        print(f"  - post {post['id']}: \"{post['title']}\"")
