@@ -2,11 +2,12 @@ name: Scheduled Check-In Bot
 
 on:
   schedule:
-    # Runs every 30 minutes, all day, every day (UTC).
-    # We don't know the instructor's exact check-in window yet, and GitHub's
-    # cron scheduler can run late under load, so frequent runs give us margin
-    # to catch a window even if one run is delayed or misses it.
-    - cron: "0,30 * * * *"
+    # Runs 3x/day (UTC): 9 AM, 3 PM, 9 PM Central during CDT.
+    # Three runs a day gives margin if one run fails, without the churn of
+    # running every 30 minutes. None of these land in 04:00-06:00 UTC, the
+    # window the instructor flagged as risky (a late run there can slip past
+    # midnight Central and miss a day).
+    - cron: "0 14,20,2 * * *"
   workflow_dispatch:
 
 # Prevents two runs from ever executing at the same time (e.g. a slow run still
