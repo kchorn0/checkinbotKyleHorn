@@ -90,3 +90,7 @@ What AI did: I used Claude Code to scaffold the project structure and write the 
 What I did: I directed the whole build one step at a time instead of asking for the finished bot up front — deciding the order (connect → collect → download → detect → dedupe → reply → review → automate), reviewing each piece before moving on, and running a full requirements check against the assignment before touching GitHub Actions. I also set up the actual repo secrets/variables in GitHub, ran the manual workflow trigger myself, and read the run output to confirm it worked.
 
 What I changed: After Claude's own review pass flagged that attachment filenames weren't sanitized (a file named with ../ could theoretically write outside artifact/files/), I asked for that fix specifically rather than accepting the original download code as final. I also trimmed and reworded parts of the generated README to match my own preferred format and removed sections I felt were unnecessary.
+
+Updated (9/15/2026):
+I sent Claude the code for the new announcement regarding the new posts and test posts on the Practice Hub. It gave me the recommendation to change the CRON frequency since it was currently set to run every 30 mins because I didn't know when the posts were.
+So, in the end, one more piece of code that I modified from AI was the CRON run frequency to run only 3 times a day, as posted in the announcement.
