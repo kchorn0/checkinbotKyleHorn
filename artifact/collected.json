@@ -1,7 +1,18 @@
 {
   "instructor_id": "7",
-  "post_count": 18,
+  "post_count": 19,
   "posts": [
+    {
+      "id": 40,
+      "title": "Check-in for Sept 21",
+      "body": "Daily check-in for Monday 21 September. Reply to this post to check in.",
+      "tags": [
+        "check-in"
+      ],
+      "created_at": "2026-09-21T05:00:36.490543",
+      "updated_at": "2026-09-21T05:00:36.490545",
+      "attachments": []
+    },
     {
       "id": 39,
       "title": "Sept 20 check-in",
